@@ -14,7 +14,8 @@ def mock_config():
     """Standard configuration for tests."""
     return {
         'detection': {
-            'suspicious_terms': ['xmrig', 'monero', 'stratum', 'nicehash']
+            'suspicious_terms': ['xmrig', 'monero', 'stratum', 'nicehash'],
+            'scan_interval_seconds': 5
         },
         'resources': {
             'cpu_threshold_percent': 80,
@@ -44,6 +45,40 @@ def mock_config():
         'filesystem': {
             'watch_dirs': ['/tmp', '/var/tmp'],
             'max_file_age_minutes': 30
+        },
+        'forensics': {
+            'enabled': True,
+            'storage_dir': '/tmp/test_forensics',
+            'max_collection_time_seconds': 2,
+            'include_environ': True,
+            'include_open_files': True,
+            'retention_days': 30
+        },
+        'auditd': {
+            'enabled': False,
+            'install_rules': True,
+            'log_path': '/var/log/audit/audit.log'
+        },
+        'persistence': {
+            'enabled': True,
+            'scan_interval_seconds': 60,
+            'crontab': {
+                'system_paths': ['/etc/crontab'],
+                'cron_d_path': '/etc/cron.d',
+                'user_crontabs_path': '/var/spool/cron/crontabs',
+                'periodic_paths': ['/etc/cron.daily', '/etc/cron.hourly']
+            },
+            'systemd': {
+                'service_path': '/etc/systemd/system',
+                'timer_path': '/etc/systemd/system'
+            },
+            'rc_scripts': {
+                'paths': ['/etc/rc.local', '/etc/init.d']
+            },
+            'ssh_keys': {
+                'authorized_keys_paths': ['/root/.ssh/authorized_keys', '/home/*/.ssh/authorized_keys'],
+                'known_keys_db': '/var/lib/guardian/known_ssh_keys.json'
+            }
         }
     }
 

@@ -87,7 +87,9 @@ if [[ "$DISTRO" == "debian" ]]; then
         iptables-persistent \
         curl \
         chkrootkit \
-        rkhunter
+        rkhunter \
+        auditd \
+        audispd-plugins
 else
     yum install -y -q \
         python3 \
@@ -99,7 +101,9 @@ else
         iptables-services \
         curl \
         chkrootkit \
-        rkhunter
+        rkhunter \
+        audit \
+        audit-libs
 fi
 
 # Step 2: Create installation directory
@@ -115,8 +119,10 @@ chmod +x "$INSTALL_DIR/audit/audit.sh" 2>/dev/null || true
 log "[3/8] Creating runtime directories..."
 mkdir -p /var/quarantine
 mkdir -p /var/lib/guardian
+mkdir -p /var/lib/guardian/forensics
 mkdir -p /var/log
 chmod 700 /var/quarantine
+chmod 700 /var/lib/guardian/forensics
 
 # Step 4: Configure SSH hardening
 log "[4/8] Configuring SSH hardening..."
@@ -147,8 +153,8 @@ cd "$INSTALL_DIR"
 # Apply firewall rules
 "$INSTALL_DIR/firewall/rules.sh" install || warn "Firewall rules failed (might need reboot)"
 
-# Step 7: Initialize integrity database
-log "[7/8] Initializing integrity checker..."
+# Step 7: Initialize integrity database and auditd rules
+log "[7/8] Initializing integrity checker and auditd rules..."
 cd "$INSTALL_DIR/guardian"
 python3 -c "
 import sys
@@ -163,6 +169,28 @@ checker = IntegrityChecker(config)
 checker.initialize()
 print('Integrity database initialized')
 " || warn "Integrity init failed"
+
+# Configure auditd rules for Guardian
+if command -v auditctl &> /dev/null; then
+    log "Installing Guardian audit rules..."
+    mkdir -p /etc/audit/rules.d
+    cat > /etc/audit/rules.d/guardian.rules << 'EOF'
+# VPS Guardian - Monitor executions in temp directories
+-a always,exit -F arch=b64 -S execve -F dir=/tmp -k guardian_tmp
+-a always,exit -F arch=b64 -S execve -F dir=/dev/shm -k guardian_shm
+-a always,exit -F arch=b64 -S execve -F dir=/var/tmp -k guardian_vartmp
+EOF
+
+    # Reload audit rules if auditd is running
+    if systemctl is-active --quiet auditd 2>/dev/null; then
+        auditctl -R /etc/audit/rules.d/guardian.rules 2>/dev/null || warn "Failed to load audit rules"
+        log "Audit rules installed and loaded"
+    else
+        log "Audit rules installed (will be loaded when auditd starts)"
+    fi
+else
+    warn "auditctl not found - skipping audit rules installation"
+fi
 
 # Step 8: Install and start Guardian service
 log "[8/8] Installing Guardian service..."

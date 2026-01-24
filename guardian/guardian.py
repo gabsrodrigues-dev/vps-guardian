@@ -113,10 +113,12 @@ def main():
 
     # Import detection modules
     try:
-        from modules import (
+        from guardian.modules import (
             Detector, ResourceMonitor, NetworkMonitor,
             IntegrityChecker, FilesystemMonitor,
-            ResponseHandler, ResponseLevel
+            ResponseHandler, ResponseLevel,
+            PersistenceScanner, AuditdMonitor,
+            ContainerMonitor, TelegramBot
         )
         logger.info("Detection modules loaded successfully")
     except ImportError as e:
@@ -131,13 +133,26 @@ def main():
         integrity_checker = IntegrityChecker(config)
         filesystem_monitor = FilesystemMonitor(config)
         response_handler = ResponseHandler(config)
+        persistence_scanner = PersistenceScanner(config)
+        auditd_monitor = AuditdMonitor(config)
+        container_monitor = ContainerMonitor(config)
+        telegram_bot = TelegramBot(config)
         logger.info("All modules initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize modules: {e}", exc_info=True)
         sys.exit(1)
 
+    # Start Telegram bot polling
+    telegram_bot.start_polling()
+
     scan_interval = config['detection']['scan_interval_seconds']
     logger.info(f"Starting monitoring loop (scan interval: {scan_interval}s)")
+
+    # Track last scan times for modules with different intervals
+    last_persistence_scan = 0
+    last_auditd_parse = 0
+    last_forensics_cleanup = 0
+    last_container_check = 0
 
     while True:
         try:
@@ -205,6 +220,23 @@ def main():
                             'severity': violation.severity
                         }
                     ))
+
+                # Rootkit detection
+                rootkit_indicators = integrity_checker.check_rootkits()
+                for indicator in rootkit_indicators:
+                    logger.critical(f"ROOTKIT INDICATOR: {indicator.check_name} - {indicator.description}")
+                    response_handler.handle_threat(
+                        pid=0,
+                        name=f"rootkit:{indicator.check_name}",
+                        reason=indicator.description,
+                        level=ResponseLevel.NOTIFY,
+                        exe_path=None,
+                        extra_details={
+                            'check_name': indicator.check_name,
+                            'severity': indicator.severity,
+                            'evidence': indicator.evidence
+                        }
+                    )
             except Exception as e:
                 logger.error(f"Error in integrity_checker.check(): {e}", exc_info=True)
 
@@ -287,6 +319,117 @@ def main():
                         )
             except Exception as e:
                 logger.error(f"Error in resource_monitor.check(): {e}", exc_info=True)
+
+            # PRIORITY 6: Persistence - Malware persistence mechanisms (every 60s)
+            current_time = time.time()
+            persistence_interval = config.get('persistence', {}).get('scan_interval_seconds', 60)
+            if persistence_scanner.enabled and (current_time - last_persistence_scan >= persistence_interval):
+                try:
+                    persistence_threats = persistence_scanner.scan()
+                    for threat in persistence_threats:
+                        logger.warning(f"Persistence mechanism detected: {threat.type.value} at {threat.path}")
+                        # Send notification for high severity threats
+                        if threat.severity == 'high':
+                            response_handler.handle_threat(
+                                pid=0,
+                                name=f"persistence:{threat.type.value}",
+                                reason=f"{threat.type.value} at {threat.path}: {threat.content_snippet[:100] if threat.content_snippet else 'N/A'}",
+                                level=ResponseLevel.NOTIFY,
+                                exe_path=None,
+                                extra_details={
+                                    'persistence_type': threat.type.value,
+                                    'path': threat.path,
+                                    'severity': threat.severity,
+                                    'content_snippet': threat.content_snippet[:200] if threat.content_snippet else None
+                                }
+                            )
+                    last_persistence_scan = current_time
+                except Exception as e:
+                    logger.error(f"Error in persistence_scanner.scan(): {e}", exc_info=True)
+
+            # PRIORITY 7: Auditd - Suspicious executions in monitored paths (every 30s)
+            if auditd_monitor.enabled and (current_time - last_auditd_parse >= 30):
+                try:
+                    events = auditd_monitor.parse_log(since_last=True)
+                    suspicious = auditd_monitor.get_suspicious_events(events)
+                    for event in suspicious:
+                        logger.warning(f"Auditd: Suspicious exec in {event.key}: {event.exe}")
+                        response_handler.handle_threat(
+                            pid=event.pid,
+                            name=event.exe.split('/')[-1] if event.exe else 'unknown',
+                            reason=f"Execution in monitored path: {' '.join(event.cmdline) if event.cmdline else event.exe}",
+                            level=ResponseLevel.KILL,
+                            exe_path=event.exe,
+                            extra_details={
+                                'auditd_key': event.key,
+                                'cmdline': event.cmdline,
+                                'cwd': event.cwd,
+                                'timestamp': event.timestamp
+                            }
+                        )
+                    last_auditd_parse = current_time
+                except Exception as e:
+                    logger.error(f"Error in auditd_monitor.parse_log(): {e}", exc_info=True)
+
+            # PRIORITY 8: Container resource monitoring (every 60s by default)
+            container_interval = config.get('containers', {}).get('resource_monitoring', {}).get('check_interval_seconds', 60)
+            if container_monitor.enabled and (current_time - last_container_check >= container_interval):
+                try:
+                    # Check for warnings (5+ min high CPU)
+                    warnings = container_monitor.get_warnings()
+                    for warn in warnings:
+                        logger.warning(
+                            f"Container {warn['container_name']} high CPU for {warn['duration_minutes']:.1f}min"
+                        )
+                        telegram_bot.send_container_warning(
+                            container_name=warn['container_name'],
+                            container_id=warn['container_id'],
+                            cpu_percent=warn['cpu_percent'],
+                            duration_minutes=warn['duration_minutes'],
+                            image=warn['image'],
+                            labels=warn['labels']
+                        )
+
+                    # Check for abusive containers (15+ min high CPU)
+                    abusive = container_monitor.check()
+                    for abuse in abusive:
+                        logger.critical(
+                            f"CONTAINER CPU ABUSE: {abuse.container_name} ({abuse.container_id[:12]}) "
+                            f"at {abuse.cpu_percent:.1f}% for {abuse.duration_minutes:.1f} minutes"
+                        )
+
+                        # Stop the container
+                        if container_monitor.stop_container(abuse.container_id):
+                            # Send notification
+                            response_handler.handle_threat(
+                                pid=0,
+                                process_name=f"container:{abuse.container_name}",
+                                threat_type="CONTAINER_CPU_ABUSE",
+                                reason=f"Container {abuse.container_name} used {abuse.cpu_percent:.1f}% CPU for {abuse.duration_minutes:.1f} minutes",
+                                level=ResponseLevel.NOTIFY,
+                                exe_path=None,
+                                extra_details={
+                                    'container_id': abuse.container_id,
+                                    'container_name': abuse.container_name,
+                                    'image': abuse.image,
+                                    'cpu_percent': abuse.cpu_percent,
+                                    'duration_minutes': abuse.duration_minutes,
+                                    'labels': abuse.labels
+                                }
+                            )
+                    last_container_check = current_time
+                except Exception as e:
+                    logger.error(f"Container monitoring error: {e}", exc_info=True)
+
+            # Forensics cleanup (every hour)
+            if current_time - last_forensics_cleanup >= 3600:
+                try:
+                    deleted = response_handler.forensics.cleanup_old()
+                    if deleted > 0:
+                        logger.info(f"Cleaned up {deleted} old forensics files")
+                    last_forensics_cleanup = current_time
+                except Exception as e:
+                    logger.error(f"Error in forensics cleanup: {e}", exc_info=True)
 
             time.sleep(scan_interval)
 

@@ -303,3 +303,326 @@ class TestResponseHandler:
         assert 'killed' in incident.action_taken
         mock_proc.terminate.assert_called_once()  # Process killed
         assert not fake_exe.exists()  # File quarantined
+
+    @patch('guardian.modules.response.ForensicsCollector')
+    @patch('psutil.Process')
+    @patch('requests.post')
+    def test_forensics_collected_before_kill(self, mock_post, mock_proc_class, mock_forensics_class, mock_config, tmp_path):
+        """Should collect forensics BEFORE killing process."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['response']['telegram']['enabled'] = False
+        mock_config['forensics']['storage_dir'] = str(tmp_path / 'forensics')
+
+        # Mock forensics collector
+        mock_forensics = Mock()
+        mock_forensics_data = Mock()
+        mock_forensics_data.pid = 1234
+        mock_forensics.collect.return_value = mock_forensics_data
+        mock_forensics.save.return_value = Path('/tmp/forensics/1234.json')
+        mock_forensics.to_summary.return_value = 'Forensic Summary'
+        mock_forensics_class.return_value = mock_forensics
+
+        # Mock process
+        mock_proc = Mock()
+        mock_proc.children.return_value = []
+        mock_proc.terminate = Mock()
+        mock_proc.wait = Mock()
+        mock_proc_class.return_value = mock_proc
+
+        handler = ResponseHandler(mock_config)
+
+        incident = handler.handle_threat(
+            pid=1234,
+            name='malicious',
+            reason='Suspicious activity',
+            level=ResponseLevel.KILL
+        )
+
+        # Verify forensics.collect was called BEFORE _kill_process
+        mock_forensics.collect.assert_called_once_with(1234)
+        mock_forensics.save.assert_called_once_with(mock_forensics_data)
+
+        # Verify process was killed
+        mock_proc.terminate.assert_called_once()
+
+    @patch('guardian.modules.response.ForensicsCollector')
+    @patch('psutil.Process')
+    @patch('requests.post')
+    def test_forensics_included_in_notification(self, mock_post, mock_proc_class, mock_forensics_class, mock_config, tmp_path):
+        """Should include forensics summary in Telegram notification."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['response']['telegram']['enabled'] = True
+        mock_config['forensics']['storage_dir'] = str(tmp_path / 'forensics')
+
+        # Mock forensics collector
+        mock_forensics = Mock()
+        mock_forensics_data = Mock()
+        mock_forensics_data.pid = 1234
+        mock_forensics.collect.return_value = mock_forensics_data
+        mock_forensics.save.return_value = Path('/tmp/forensics/1234.json')
+        mock_forensics.to_summary.return_value = 'FORENSIC EVIDENCE\nPID: 1234\nUser: malicious_user'
+        mock_forensics_class.return_value = mock_forensics
+
+        # Mock process
+        mock_proc = Mock()
+        mock_proc.children.return_value = []
+        mock_proc.terminate = Mock()
+        mock_proc.wait = Mock()
+        mock_proc_class.return_value = mock_proc
+
+        handler = ResponseHandler(mock_config)
+
+        incident = handler.handle_threat(
+            pid=1234,
+            name='malicious',
+            reason='Suspicious activity',
+            level=ResponseLevel.KILL
+        )
+
+        # Verify notification was sent
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args[1]
+        message = call_kwargs['json']['text']
+
+        # Verify forensics summary is in notification
+        assert 'FORENSIC EVIDENCE' in message
+        assert 'PID: 1234' in message
+
+    @patch('guardian.modules.response.ForensicsCollector')
+    @patch('psutil.Process')
+    def test_forensics_path_in_incident_log(self, mock_proc_class, mock_forensics_class, mock_config, tmp_path):
+        """Should include forensics file path in incident log."""
+        log_file = tmp_path / 'incidents.jsonl'
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(log_file)
+        mock_config['response']['telegram']['enabled'] = False
+        mock_config['forensics']['storage_dir'] = str(tmp_path / 'forensics')
+
+        # Mock forensics collector
+        mock_forensics = Mock()
+        mock_forensics_data = Mock()
+        mock_forensics_data.pid = 5678
+        forensics_path = tmp_path / 'forensics' / '5678.json'
+        mock_forensics.collect.return_value = mock_forensics_data
+        mock_forensics.save.return_value = forensics_path
+        mock_forensics_class.return_value = mock_forensics
+
+        # Mock process
+        mock_proc = Mock()
+        mock_proc.children.return_value = []
+        mock_proc.terminate = Mock()
+        mock_proc.wait = Mock()
+        mock_proc_class.return_value = mock_proc
+
+        handler = ResponseHandler(mock_config)
+
+        incident = handler.handle_threat(
+            pid=5678,
+            name='xmrig',
+            reason='Mining activity',
+            level=ResponseLevel.KILL
+        )
+
+        # Verify incident has forensics_path
+        assert hasattr(incident, 'forensics_path')
+        assert incident.forensics_path == str(forensics_path)
+
+        # Verify it's logged to file
+        import json
+        with open(log_file) as f:
+            logged = json.loads(f.read())
+            assert logged['forensics_path'] == str(forensics_path)
+
+    @patch('guardian.modules.response.ForensicsCollector')
+    @patch('psutil.Process')
+    def test_forensics_graceful_failure(self, mock_proc_class, mock_forensics_class, mock_config, tmp_path):
+        """Should continue killing process even if forensics collection fails."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['response']['telegram']['enabled'] = False
+        mock_config['forensics']['storage_dir'] = str(tmp_path / 'forensics')
+
+        # Mock forensics collector to fail
+        mock_forensics = Mock()
+        mock_forensics.collect.return_value = None  # Collection failed
+        mock_forensics_class.return_value = mock_forensics
+
+        # Mock process
+        mock_proc = Mock()
+        mock_proc.children.return_value = []
+        mock_proc.terminate = Mock()
+        mock_proc.wait = Mock()
+        mock_proc_class.return_value = mock_proc
+
+        handler = ResponseHandler(mock_config)
+
+        incident = handler.handle_threat(
+            pid=9999,
+            name='malicious',
+            reason='Bad process',
+            level=ResponseLevel.KILL
+        )
+
+        # Verify process was still killed despite forensics failure
+        mock_proc.terminate.assert_called_once()
+        assert 'killed' in incident.action_taken
+
+        # Verify forensics_path is None when collection fails
+        assert incident.forensics_path is None
+
+
+class TestContainerResponse:
+    """Test suite for container response handling."""
+
+    @patch('subprocess.run')
+    def test_handle_container_threat_stop(self, mock_subprocess, mock_config, tmp_path):
+        """Should stop container when action is 'stop'."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['containers'] = {
+            'enabled': True,
+            'on_threat': 'stop',
+            'whitelist': []
+        }
+        handler = ResponseHandler(mock_config)
+
+        container_info = {
+            'type': 'docker',
+            'container_id': 'abc123def456',
+            'full_id': 'abc123def456789012345678901234567890123456789012345678901234'
+        }
+
+        mock_subprocess.return_value = Mock(returncode=0)
+
+        result = handler._handle_container_threat(container_info)
+
+        assert result is True
+        mock_subprocess.assert_called_once()
+        call_args = mock_subprocess.call_args[0][0]
+        assert 'docker' in call_args
+        assert 'stop' in call_args
+        assert 'abc123def456' in call_args
+
+    @patch('subprocess.run')
+    def test_handle_container_threat_kill(self, mock_subprocess, mock_config, tmp_path):
+        """Should kill container when action is 'kill'."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['containers'] = {
+            'enabled': True,
+            'on_threat': 'kill',
+            'whitelist': []
+        }
+        handler = ResponseHandler(mock_config)
+
+        container_info = {
+            'type': 'docker',
+            'container_id': 'xyz789abc123',
+            'full_id': 'xyz789abc123456789012345678901234567890123456789012345678901234'
+        }
+
+        mock_subprocess.return_value = Mock(returncode=0)
+
+        result = handler._handle_container_threat(container_info)
+
+        assert result is True
+        mock_subprocess.assert_called_once()
+        call_args = mock_subprocess.call_args[0][0]
+        assert 'docker' in call_args
+        assert 'kill' in call_args
+        assert 'xyz789abc123' in call_args
+
+    def test_handle_container_threat_notify_only(self, mock_config, tmp_path):
+        """Should not execute any command when action is 'notify_only'."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['containers'] = {
+            'enabled': True,
+            'on_threat': 'notify_only',
+            'whitelist': []
+        }
+        handler = ResponseHandler(mock_config)
+
+        container_info = {
+            'type': 'docker',
+            'container_id': 'test123',
+            'full_id': 'test123456789012345678901234567890123456789012345678901234567'
+        }
+
+        with patch('subprocess.run') as mock_subprocess:
+            result = handler._handle_container_threat(container_info)
+
+            assert result is True
+            mock_subprocess.assert_not_called()
+
+    @patch('subprocess.run')
+    def test_handle_container_threat_whitelisted(self, mock_subprocess, mock_config, tmp_path):
+        """Should not take action on whitelisted container."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['containers'] = {
+            'enabled': True,
+            'on_threat': 'stop',
+            'whitelist': ['abc123def456']
+        }
+        handler = ResponseHandler(mock_config)
+
+        container_info = {
+            'type': 'docker',
+            'container_id': 'abc123def456',
+            'full_id': 'abc123def456789012345678901234567890123456789012345678901234'
+        }
+
+        result = handler._handle_container_threat(container_info)
+
+        assert result is False
+        mock_subprocess.assert_not_called()
+
+    @patch('subprocess.run')
+    def test_handle_container_threat_disabled(self, mock_subprocess, mock_config, tmp_path):
+        """Should not take action when containers feature is disabled."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['containers'] = {
+            'enabled': False,
+            'on_threat': 'stop',
+            'whitelist': []
+        }
+        handler = ResponseHandler(mock_config)
+
+        container_info = {
+            'type': 'docker',
+            'container_id': 'test123',
+            'full_id': 'test123456789012345678901234567890123456789012345678901234567'
+        }
+
+        result = handler._handle_container_threat(container_info)
+
+        assert result is False
+        mock_subprocess.assert_not_called()
+
+    @patch('subprocess.run')
+    def test_handle_container_threat_command_failure(self, mock_subprocess, mock_config, tmp_path):
+        """Should handle docker command failure gracefully."""
+        mock_config['response']['quarantine_dir'] = str(tmp_path / 'quarantine')
+        mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
+        mock_config['containers'] = {
+            'enabled': True,
+            'on_threat': 'stop',
+            'whitelist': []
+        }
+        handler = ResponseHandler(mock_config)
+
+        container_info = {
+            'type': 'docker',
+            'container_id': 'test123',
+            'full_id': 'test123456789012345678901234567890123456789012345678901234567'
+        }
+
+        mock_subprocess.return_value = Mock(returncode=1)
+
+        result = handler._handle_container_threat(container_info)
+
+        assert result is False

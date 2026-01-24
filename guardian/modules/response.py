@@ -8,6 +8,7 @@ import os
 import shutil
 import json
 import signal
+import subprocess
 import psutil
 import requests
 from pathlib import Path
@@ -16,6 +17,8 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
 import logging
+
+from guardian.modules.forensics import ForensicsCollector
 
 logger = logging.getLogger('guardian.response')
 
@@ -34,6 +37,7 @@ class Incident:
     reason: str
     action_taken: str
     details: Dict[str, Any]
+    forensics_path: Optional[str] = None
 
 class ResponseHandler:
     """Handles responses to detected threats."""
@@ -48,6 +52,15 @@ class ResponseHandler:
         self.telegram_enabled = telegram_config.get('enabled', False)
         self.telegram_webhook = telegram_config.get('webhook_url')
         self.telegram_chat_id = telegram_config.get('chat_id')
+
+        # Forensics collector
+        self.forensics = ForensicsCollector(config)
+
+        # Container config
+        containers_config = config.get('containers', {})
+        self.containers_enabled = containers_config.get('enabled', False)
+        self.container_on_threat = containers_config.get('on_threat', 'notify_only')
+        self.container_whitelist = containers_config.get('whitelist', [])
 
         # Ensure directories exist (gracefully handle permission errors)
         try:
@@ -67,12 +80,33 @@ class ResponseHandler:
 
         details = extra_details or {}
         action = 'none'
+        forensics_path = None
+        forensics_summary = None
 
         if level == ResponseLevel.NOTIFY:
             action = 'notified'
             self._send_notification(pid, name, reason, is_kill=False, details=details)
 
         elif level == ResponseLevel.KILL:
+            # Collect forensics BEFORE killing process
+            forensics_data = self.forensics.collect(pid)
+            if forensics_data:
+                try:
+                    evidence_path = self.forensics.save(forensics_data)
+                    forensics_path = str(evidence_path)
+                    forensics_summary = self.forensics.to_summary(forensics_data)
+                    logger.info(f"Forensics collected: {forensics_path}")
+
+                    # Handle container threat if detected
+                    if forensics_data.container_info:
+                        container_handled = self._handle_container_threat(forensics_data.container_info)
+                        if container_handled:
+                            action = 'container_stopped'
+                            logger.info(f"Container {forensics_data.container_info['container_id']} handled")
+
+                except Exception as e:
+                    logger.error(f"Failed to save forensics: {e}")
+
             # Kill the process
             killed = self._kill_process(pid)
             action = 'killed' if killed else 'kill_failed'
@@ -84,7 +118,8 @@ class ResponseHandler:
                     action += '+quarantined'
 
             # Send notification
-            self._send_notification(pid, name, reason, is_kill=True, details=details)
+            self._send_notification(pid, name, reason, is_kill=True,
+                                  details=details, forensics_summary=forensics_summary)
 
         # Log the incident
         incident = Incident(
@@ -94,7 +129,8 @@ class ResponseHandler:
             threat_type=reason.split(':')[0] if ':' in reason else 'unknown',
             reason=reason,
             action_taken=action,
-            details=details
+            details=details,
+            forensics_path=forensics_path
         )
 
         self._log_incident(incident)
@@ -177,7 +213,8 @@ class ResponseHandler:
             return False
 
     def _send_notification(self, pid: int, name: str, reason: str,
-                           is_kill: bool, details: Dict):
+                           is_kill: bool, details: Dict,
+                           forensics_summary: Optional[str] = None):
         """Send notification via Telegram."""
         if not self.telegram_enabled or not self.telegram_webhook:
             return
@@ -197,15 +234,22 @@ class ResponseHandler:
         if 'time_until_kill' in details and not is_kill:
             detail_lines.append(f"Kill em: {details['time_until_kill']:.1f} min")
 
-        message = f"""
-{emoji} {title} VPS Guardian
-━━━━━━━━━━━━━━━━━━━
-Processo: {name} (PID {pid})
-{chr(10).join(detail_lines)}
-Motivo: {reason}
-Ação: {action_text}
-━━━━━━━━━━━━━━━━━━━
-        """.strip()
+        message_parts = [
+            f"{emoji} {title} VPS Guardian",
+            "━━━━━━━━━━━━━━━━━━━",
+            f"Processo: {name} (PID {pid})",
+            chr(10).join(detail_lines),
+            f"Motivo: {reason}",
+            f"Ação: {action_text}"
+        ]
+
+        # Add forensics summary if available
+        if forensics_summary:
+            message_parts.append("━━━━━━━━━━━━━━━━━━━")
+            message_parts.append(forensics_summary)
+
+        message_parts.append("━━━━━━━━━━━━━━━━━━━")
+        message = chr(10).join(message_parts)
 
         try:
             # For Telegram Bot API
@@ -229,3 +273,65 @@ Ação: {action_text}
                 f.write(json.dumps(asdict(incident)) + '\n')
         except IOError as e:
             logger.error(f"Failed to log incident: {e}")
+
+    def _handle_container_threat(self, container_info: Dict[str, Any]) -> bool:
+        """Handle threat in container based on config.
+
+        Config options (containers.on_threat):
+        - 'stop': docker stop {container_id}
+        - 'kill': docker kill {container_id}
+        - 'notify_only': just alert, don't take action
+
+        Returns:
+            True if action was taken or notify_only, False if disabled/whitelisted/failed
+        """
+        # Check if containers feature is enabled
+        if not self.containers_enabled:
+            logger.debug("Containers feature is disabled")
+            return False
+
+        container_id = container_info.get('container_id')
+        if not container_id:
+            logger.warning("Container info missing container_id")
+            return False
+
+        # Check whitelist
+        if container_id in self.container_whitelist:
+            logger.info(f"Container {container_id} is whitelisted, skipping action")
+            return False
+
+        # Handle based on configured action
+        if self.container_on_threat == 'notify_only':
+            logger.info(f"Container {container_id} detected (notify_only mode)")
+            return True
+
+        # Execute docker command
+        container_type = container_info.get('type', 'docker')
+        command = [container_type, self.container_on_threat, container_id]
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if result.returncode == 0:
+                logger.info(
+                    f"Container {container_id} {self.container_on_threat}ped successfully"
+                )
+                return True
+            else:
+                logger.error(
+                    f"Failed to {self.container_on_threat} container {container_id}: "
+                    f"{result.stderr}"
+                )
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Timeout executing {command}")
+            return False
+        except Exception as e:
+            logger.error(f"Error executing {command}: {e}")
+            return False

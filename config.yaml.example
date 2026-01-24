@@ -102,8 +102,23 @@ response:
   # Notificações Telegram (opcional)
   telegram:
     enabled: false
-    webhook_url: "https://api.telegram.org/bot<SEU_TOKEN>/sendMessage"
-    chat_id: "<SEU_CHAT_ID>"
+    bot_token: "YOUR_BOT_TOKEN"  # Obtenha com @BotFather
+    chat_id: "YOUR_CHAT_ID"      # Seu chat ID
+    webhook_url: null             # Legacy, opcional
+
+    # Recursos interativos (controle remoto via bot)
+    interactive:
+      enabled: true                   # Habilitar comandos e botões
+      poll_interval_seconds: 2        # Intervalo de polling para comandos
+      action_timeout_minutes: 30      # Timeout para ações pendentes
+
+    # Segurança: IDs de usuários autorizados
+    # Deixe vazio para permitir todos (não recomendado)
+    allowed_user_ids: []
+    # Exemplo:
+    # allowed_user_ids:
+    #   - 123456789
+    #   - 987654321
 
 # Verificação de Integridade
 integrity:
@@ -122,6 +137,15 @@ integrity:
   # Banco de dados de hashes
   hash_db: /var/lib/guardian/hashes.json
 
+  # Detecção de rootkits
+  rootkit_detection:
+    enabled: true
+    check_ld_preload: true
+    check_hidden_uid0: true
+    check_hugepages: true
+    check_hidden_processes: true
+    check_kernel_modules: true
+
 # Monitoramento de Filesystem
 filesystem:
   # Diretórios para monitorar (executáveis suspeitos)
@@ -132,3 +156,146 @@ filesystem:
 
   # Arquivos modificados nos últimos N minutos são considerados suspeitos
   max_file_age_minutes: 30
+
+# Coleta de Evidências Forenses
+forensics:
+  # Habilitar coleta de evidências antes de matar processos
+  enabled: true
+
+  # Diretório para armazenar evidências forenses
+  storage_dir: /var/lib/guardian/forensics
+
+  # Tempo máximo para coletar evidências (segundos)
+  max_collection_time_seconds: 2
+
+  # Incluir variáveis de ambiente na coleta
+  include_environ: true
+
+  # Incluir arquivos abertos na coleta
+  include_open_files: true
+
+  # Retenção de evidências (dias)
+  # Evidências mais antigas serão automaticamente removidas
+  retention_days: 30
+
+# Detecção de Mecanismos de Persistência
+# Detecta cron jobs, systemd services, RC scripts e chaves SSH maliciosas
+persistence:
+  # Habilitar detecção de persistência
+  enabled: true
+
+  # Intervalo de varredura em segundos
+  scan_interval_seconds: 60
+
+  # Configuração de crontabs
+  crontab:
+    enabled: true
+    check_system: true
+    check_users: true
+    system_paths:
+      - /etc/crontab
+    cron_d_path: /etc/cron.d
+    user_crontabs_path: /var/spool/cron/crontabs
+    periodic_paths:
+      - /etc/cron.daily
+      - /etc/cron.hourly
+      - /etc/cron.weekly
+      - /etc/cron.monthly
+
+  # Configuração de systemd
+  systemd:
+    enabled: true
+    service_path: /etc/systemd/system
+    timer_path: /etc/systemd/system
+    malicious_service_names:
+      - bot.service
+      - rondo.service
+      - rsyslo.service
+      - system-cleanup.service
+      - perfctl.service
+      - kdevtmpfsi.service
+      - kinsing.service
+
+  # Configuração de scripts RC
+  rc_scripts:
+    paths:
+      - /etc/rc.local
+      - /etc/init.d
+
+  # Configuração de chaves SSH
+  ssh_keys:
+    enabled: true
+    authorized_keys_paths:
+      - /root/.ssh/authorized_keys
+      - /home/*/.ssh/authorized_keys
+    known_keys_db: /var/lib/guardian/known_ssh_keys.json
+    alert_on_new: true
+
+# Container Awareness
+# Detecta se processos estão em containers e aplica ações específicas
+containers:
+  # Habilitar detecção de containers
+  enabled: true
+
+  # Ação a tomar quando ameaça detectada em container
+  # Opções: 'stop' (parar container), 'alert' (apenas alertar)
+  on_threat: stop
+
+  # Whitelist de containers que nunca devem ser parados
+  whitelist: []
+  # Exemplo:
+  # whitelist:
+  #   - web-production
+  #   - database
+
+  # Monitoramento de Recursos de Containers
+  # Monitora uso de CPU dos containers e para os que abusam dos recursos
+  resource_monitoring:
+    # Habilitar monitoramento de containers
+    enabled: true
+
+    # Threshold de CPU (porcentagem) para considerar abuso
+    # Containers que usam >= 100% CPU continuamente são suspeitos
+    cpu_threshold_percent: 100
+
+    # Tempo (minutos) para enviar aviso via Telegram
+    # Alerta precoce para containers com CPU alta
+    warn_after_minutes: 5
+
+    # Tempo (minutos) de CPU alta antes de parar o container
+    # Containers com CPU >= threshold por este tempo serão parados
+    kill_after_minutes: 15
+
+    # Intervalo de verificação (segundos)
+    check_interval_seconds: 60
+
+    # Ação a tomar: 'stop' (parar gracefully) ou 'kill' (forçar parada)
+    action: stop
+
+    # Containers que NUNCA devem ser parados (regex patterns)
+    # IMPORTANTE: Coolify e infraestrutura crítica devem estar aqui
+    whitelist:
+      - "coolify.*"           # Todos containers Coolify
+      - "traefik.*"           # Proxy Traefik
+      - ".*postgres.*"        # Bancos de dados
+      - ".*redis.*"           # Cache Redis
+      - ".*mysql.*"           # MySQL/MariaDB
+      - ".*mariadb.*"
+
+    # Whitelist por labels do Docker
+    # Containers com estas labels nunca serão parados
+    whitelist_labels:
+      - "coolify.managed=true"
+      - "guardian.ignore=true"
+
+# Monitoramento Auditd (Opcional)
+# Detecta processos de curta duração via auditd logs
+auditd:
+  # Habilitar monitoramento auditd (requer auditd instalado)
+  enabled: false
+
+  # Instalar regras auditd automaticamente
+  install_rules: true
+
+  # Caminho para arquivo de log do auditd
+  log_path: /var/log/audit/audit.log

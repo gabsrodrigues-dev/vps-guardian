@@ -71,6 +71,13 @@ integrity:
     - /usr/bin/crontab
     - /usr/bin/ldd
   hash_db: /var/lib/guardian/hashes.json
+  rootkit_detection:
+    enabled: true
+    check_ld_preload: true
+    check_hidden_uid0: true
+    check_hugepages: true
+    check_hidden_processes: true
+    check_kernel_modules: true
 
 filesystem:
   watch_dirs:
@@ -78,3 +85,69 @@ filesystem:
     - /dev/shm
     - /var/tmp
   max_file_age_minutes: 5
+
+# Forensics configuration
+forensics:
+  enabled: true
+  storage_dir: /var/lib/guardian/forensics
+  max_collection_time_seconds: 2
+  include_environ: true
+  include_open_files: true
+  retention_days: 30
+
+# Persistence detection
+persistence:
+  enabled: true
+  scan_interval_seconds: 60
+  crontab:
+    enabled: true
+    check_system: true
+    check_users: true
+  systemd:
+    enabled: true
+    malicious_service_names:
+      - bot.service
+      - rondo.service
+      - rsyslo.service
+      - system-cleanup.service
+      - perfctl.service
+      - kdevtmpfsi.service
+      - kinsing.service
+  ssh_keys:
+    enabled: true
+    known_keys_db: /var/lib/guardian/known_ssh_keys.json
+    alert_on_new: true
+
+# Container awareness
+containers:
+  enabled: true
+  on_threat: stop
+  whitelist: []
+
+  # Container resource monitoring
+  resource_monitoring:
+    enabled: true
+    cpu_threshold_percent: 100
+    kill_after_minutes: 15
+    check_interval_seconds: 60
+    action: stop  # stop or kill
+
+    # Container name/image patterns to ignore (regex)
+    whitelist:
+      - "coolify.*"
+      - "traefik.*"
+      - ".*postgres.*"
+      - ".*redis.*"
+      - ".*mysql.*"
+      - ".*mariadb.*"
+
+    # Label-based whitelist
+    whitelist_labels:
+      - "coolify.managed=true"
+      - "guardian.ignore=true"
+
+# Auditd integration
+auditd:
+  enabled: false
+  install_rules: true
+  log_path: /var/log/audit/audit.log

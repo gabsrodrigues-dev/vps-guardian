@@ -1,7 +1,7 @@
 # VPS Guardian - Makefile
 # Commands for installation, validation, and management
 
-.PHONY: help install validate status logs test-detection uninstall lint test test-cov test-verbose config
+.PHONY: help install validate status logs test-detection uninstall lint test test-cov test-verbose config cron cron-status cron-remove
 
 # Default target
 help:
@@ -15,6 +15,11 @@ help:
 	@echo "  make logs           - Tail Guardian logs in real-time"
 	@echo "  make uninstall      - Remove VPS Guardian completely"
 	@echo "  make lint           - Check Python code syntax"
+	@echo ""
+	@echo "Cron Jobs:"
+	@echo "  make cron           - Install Guardian cron jobs (blocklist update + audit)"
+	@echo "  make cron-status    - Show installed Guardian cron jobs"
+	@echo "  make cron-remove    - Remove Guardian cron jobs"
 	@echo ""
 	@echo "Configuration with Telegram:"
 	@echo "  make config TELEGRAM_TOKEN=<token> TELEGRAM_CHAT_ID=<chat_id>"
@@ -212,6 +217,88 @@ uninstall:
 	fi
 	@./uninstall.sh
 
+# ===================================
+# Cron Jobs Management
+# ===================================
+
+# Install Guardian cron jobs
+cron:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Run with sudo: sudo make cron"; \
+		exit 1; \
+	fi
+	@echo "============================================"
+	@echo "Installing VPS Guardian Cron Jobs"
+	@echo "============================================"
+	@INSTALL_DIR=$$(pwd); \
+	if [ -d "/opt/vps-guardian" ]; then \
+		INSTALL_DIR="/opt/vps-guardian"; \
+	fi; \
+	echo "Using install dir: $$INSTALL_DIR"; \
+	echo ""; \
+	echo "[1/2] Setting up daily blocklist update (3 AM)..."; \
+	CRON_BLOCKLIST="0 3 * * * $$INSTALL_DIR/firewall/blocklists/update-blocklist.sh >> /var/log/guardian-blocklist.log 2>&1"; \
+	(crontab -l 2>/dev/null | grep -v "update-blocklist.sh" | grep -v "^$$"; echo "$$CRON_BLOCKLIST") | crontab -; \
+	echo "  ✅ Blocklist update scheduled"; \
+	echo ""; \
+	echo "[2/2] Setting up weekly security audit (Sunday 2 AM)..."; \
+	if [ -f "$$INSTALL_DIR/audit/audit.sh" ]; then \
+		CRON_AUDIT="0 2 * * 0 $$INSTALL_DIR/audit/audit.sh >> /var/log/guardian-audit.log 2>&1"; \
+		(crontab -l 2>/dev/null | grep -v "audit.sh" | grep -v "^$$"; echo "$$CRON_AUDIT") | crontab -; \
+		echo "  ✅ Weekly audit scheduled"; \
+	else \
+		echo "  ⚠️  audit.sh not found, skipping"; \
+	fi; \
+	echo ""; \
+	echo "============================================"; \
+	echo "✅ Cron jobs installed successfully!"; \
+	echo "============================================"; \
+	echo ""; \
+	echo "Verify with: make cron-status"; \
+	echo "Logs:"; \
+	echo "  - Blocklist: /var/log/guardian-blocklist.log"; \
+	echo "  - Audit: /var/log/guardian-audit.log"
+
+# Show installed Guardian cron jobs
+cron-status:
+	@echo "============================================"
+	@echo "VPS Guardian Cron Jobs Status"
+	@echo "============================================"
+	@echo ""
+	@if crontab -l 2>/dev/null | grep -q "vps-guardian\|guardian"; then \
+		echo "📋 Installed Guardian cron jobs:"; \
+		echo ""; \
+		crontab -l 2>/dev/null | grep -E "(guardian|blocklist|audit)" | while read line; do \
+			echo "  $$line"; \
+		done; \
+		echo ""; \
+	else \
+		echo "❌ No Guardian cron jobs found"; \
+		echo ""; \
+		echo "Install with: sudo make cron"; \
+	fi
+	@echo ""
+	@echo "📊 Recent cron activity:"
+	@if [ -f "/var/log/guardian-blocklist.log" ]; then \
+		echo "  Last blocklist update:"; \
+		tail -3 /var/log/guardian-blocklist.log 2>/dev/null | sed 's/^/    /'; \
+	else \
+		echo "  (no blocklist log yet)"; \
+	fi
+	@echo ""
+
+# Remove Guardian cron jobs
+cron-remove:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Run with sudo: sudo make cron-remove"; \
+		exit 1; \
+	fi
+	@echo "Removing Guardian cron jobs..."
+	@crontab -l 2>/dev/null | grep -v "update-blocklist.sh" | grep -v "audit.sh" | grep -v "^$$" | crontab - 2>/dev/null || true
+	@echo "✅ Guardian cron jobs removed"
+	@echo ""
+	@echo "Verify with: make cron-status"
+
 # Lint Python code
 lint:
 	@echo "Checking Python syntax..."
@@ -222,6 +309,9 @@ lint:
 	@python3 -m py_compile guardian/modules/integrity.py && echo "✅ integrity.py OK"
 	@python3 -m py_compile guardian/modules/filesystem.py && echo "✅ filesystem.py OK"
 	@python3 -m py_compile guardian/modules/response.py && echo "✅ response.py OK"
+	@python3 -m py_compile guardian/modules/auditd.py && echo "✅ auditd.py OK"
+	@python3 -m py_compile guardian/modules/persistence.py && echo "✅ persistence.py OK"
+	@python3 -m py_compile guardian/modules/forensics.py && echo "✅ forensics.py OK"
 	@echo "All Python files passed syntax check!"
 
 # Run unit tests

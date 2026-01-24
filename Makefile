@@ -8,16 +8,17 @@ help:
 	@echo "VPS Guardian - Available Commands"
 	@echo "=================================="
 	@echo ""
-	@echo "  make install      - Run full installation (requires sudo)"
-	@echo "  make validate     - Validate installation is complete and working"
-	@echo "  make status       - Show Guardian service status"
-	@echo "  make logs         - Tail Guardian logs in real-time"
-	@echo "  make test-detection - Test if detection is working (creates fake miner)"
-	@echo "  make uninstall    - Remove VPS Guardian completely"
-	@echo "  make lint         - Check Python code syntax"
-	@echo "  make test         - Run unit tests"
-	@echo "  make test-cov     - Run tests with coverage report"
-	@echo "  make test-verbose - Run tests with verbose output"
+	@echo "  make install        - Run full installation (requires sudo)"
+	@echo "  make validate       - Validate installation (passive checks only)"
+	@echo "  make status         - Show Guardian service status"
+	@echo "  make logs           - Tail Guardian logs in real-time"
+	@echo "  make uninstall      - Remove VPS Guardian completely"
+	@echo "  make lint           - Check Python code syntax"
+	@echo ""
+	@echo "Testing (LOCAL development only):"
+	@echo "  make test           - Run unit tests"
+	@echo "  make test-cov       - Run tests with coverage report"
+	@echo "  make test-detection - Creates fake miner (DO NOT USE IN PRODUCTION)"
 	@echo ""
 
 # Install VPS Guardian
@@ -141,10 +142,23 @@ logs:
 	@journalctl -fu guardian
 
 # Test detection (creates a fake miner process)
+# WARNING: This is for LOCAL TESTING ONLY - do NOT run on production VPS
+# as creating suspicious processes may trigger abuse detection by your provider
 test-detection:
-	@echo "Creating fake miner process for 15 seconds..."
-	@echo "Guardian should detect and kill it within 10 seconds."
+	@echo "============================================"
+	@echo "⚠️  WARNING: LOCAL TESTING ONLY"
+	@echo "============================================"
+	@echo "This creates a fake miner process to test Guardian."
+	@echo "Do NOT run this on production VPS - it may trigger"
+	@echo "abuse detection by your hosting provider."
 	@echo ""
+	@read -p "Continue? (y/N) " confirm; \
+	if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+		echo "Aborted."; \
+		exit 0; \
+	fi
+	@echo ""
+	@echo "Creating fake miner process for 15 seconds..."
 	@bash -c 'exec -a "xmrig-test-fake" sleep 15' &
 	@PID=$$!; \
 	echo "Fake miner PID: $$PID"; \

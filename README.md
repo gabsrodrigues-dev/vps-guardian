@@ -42,14 +42,33 @@ VPS Guardian implementa **defesa em profundidade** com 4 camadas:
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/vps-guardian.git
+git clone https://github.com/rfschubert/vps-guardian.git
 cd vps-guardian
 
-# Execute o instalador (como root)
-sudo ./setup.sh
+# Instale
+sudo make install
+
+# Valide a instalação
+make validate
+
+# Monitore em tempo real
+make logs
 ```
 
 **Pronto!** Sua VPS está protegida.
+
+## Comandos Disponíveis
+
+```bash
+make help           # Lista todos os comandos
+sudo make install   # Instala o VPS Guardian
+make validate       # Valida se instalação está correta (10 checks)
+make status         # Mostra status do serviço Guardian
+make logs           # Exibe logs em tempo real
+make test-detection # Testa detecção (cria processo fake)
+make test           # Roda suite de testes (67 testes)
+sudo make uninstall # Remove completamente
+```
 
 ## O Que é Instalado
 

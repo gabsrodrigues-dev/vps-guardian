@@ -141,22 +141,39 @@ class TestFilesystemMonitor:
 
         assert isinstance(suspicious, list)
 
-    def test_recursive_scan_subdirectories(self, filesystem_config, tmp_path):
-        """Should recursively scan subdirectories."""
-        monitor = FilesystemMonitor(filesystem_config)
+    def test_recursive_scan_subdirectories(self, tmp_path):
+        """Should recursively scan subdirectories (when under depth limit)."""
+        # Use a shallow path to test recursion
+        # Note: pytest tmp_path is already 6+ levels deep, exceeding the module's
+        # recursion limit of 5. This test uses /tmp directly for realistic testing.
+        import tempfile
+        import shutil
 
-        # Create nested structure
-        subdir = tmp_path / 'tmp' / 'subdir'
+        # Create test structure in actual /tmp
+        test_dir = Path(tempfile.mkdtemp(prefix='guardian_test_'))
+        subdir = test_dir / 'subdir'
         subdir.mkdir()
 
-        nested_exe = subdir / 'nested_miner'
-        nested_exe.write_text('#!/bin/bash\nnested malware')
-        nested_exe.chmod(0o755)
+        try:
+            nested_exe = subdir / 'nested_miner'
+            nested_exe.write_text('#!/bin/bash\n' + 'echo "mining"\n' * 100)
+            nested_exe.chmod(0o755)
 
-        suspicious = monitor.scan()
+            # Create monitor with our test directory
+            config = {
+                'filesystem': {
+                    'watch_dirs': [str(test_dir)],
+                    'max_file_age_minutes': 30
+                }
+            }
+            monitor = FilesystemMonitor(config)
+            suspicious = monitor.scan()
 
-        found = [s for s in suspicious if 'nested_miner' in s.path]
-        assert len(found) == 1
+            found = [s for s in suspicious if 'nested_miner' in s.path]
+            assert len(found) == 1
+        finally:
+            # Cleanup
+            shutil.rmtree(test_dir, ignore_errors=True)
 
     def test_skip_tiny_executables(self, filesystem_config, tmp_path):
         """Should skip very small executables (likely just scripts)."""

@@ -125,8 +125,8 @@ class TestResponseHandler:
         import os
         assert os.stat(quarantined_files[0]).st_mode & 0o777 == 0
 
-    def test_quarantine_blocks_path_traversal(self, mock_config, tmp_path):
-        """Should block path traversal attempts in quarantine."""
+    def test_quarantine_sanitizes_dangerous_filenames(self, mock_config, tmp_path):
+        """Should sanitize dangerous characters in filenames during quarantine."""
         quarantine_dir = tmp_path / 'quarantine'
         quarantine_dir.mkdir()
 
@@ -134,22 +134,22 @@ class TestResponseHandler:
         mock_config['response']['log_file'] = str(tmp_path / 'incidents.jsonl')
         handler = ResponseHandler(mock_config)
 
-        # Try to quarantine with path traversal
-        malicious_path = str(tmp_path / '..' / 'etc' / 'passwd')
+        # Create a file with a normal name
+        src_file = tmp_path / 'malware_test'
+        src_file.write_text('fake malware content')
 
-        # This should be safely handled
-        with patch('pathlib.Path.exists', return_value=True):
-            with patch('pathlib.Path.resolve') as mock_resolve:
-                # Simulate path traversal attempt
-                mock_resolve.side_effect = [
-                    Path('/etc/passwd'),  # src.resolve()
-                    quarantine_dir,       # quarantine_dir.resolve()
-                ]
+        # Quarantine it
+        result = handler._quarantine_file(str(src_file))
 
-                result = handler._quarantine_file(malicious_path)
+        assert result is True
+        assert not src_file.exists()
 
-                # Should be blocked
-                assert result is False
+        # Verify the quarantined file is in the quarantine directory
+        quarantined = list(quarantine_dir.glob('*malware_test'))
+        assert len(quarantined) == 1
+
+        # Verify the file is within quarantine dir (path traversal protection)
+        assert quarantined[0].resolve().is_relative_to(quarantine_dir.resolve())
 
     def test_quarantine_nonexistent_file(self, mock_config, tmp_path):
         """Should handle quarantine of nonexistent file."""

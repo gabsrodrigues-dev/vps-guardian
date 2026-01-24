@@ -5,6 +5,7 @@ Tests network connection detection with mocks.
 """
 
 import pytest
+import psutil
 from unittest.mock import Mock, patch, MagicMock
 from collections import namedtuple
 from guardian.modules.network import NetworkMonitor, NetworkThreat

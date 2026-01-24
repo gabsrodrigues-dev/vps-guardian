@@ -357,11 +357,13 @@ class TestRealQuarantine:
         quarantined = list(quarantine_dir.glob('*xmrig_miner'))
         assert len(quarantined) == 1, "Should be exactly one quarantined file"
 
-        # Verify content is preserved
-        assert quarantined[0].read_bytes() == original_content
-
-        # Verify permissions removed
+        # Verify permissions were removed (000)
         assert os.stat(quarantined[0]).st_mode & 0o777 == 0
+
+        # Temporarily restore permissions to verify content
+        os.chmod(quarantined[0], 0o400)
+        assert quarantined[0].read_bytes() == original_content
+        os.chmod(quarantined[0], 0o000)  # Restore locked state
 
 
 if __name__ == '__main__':

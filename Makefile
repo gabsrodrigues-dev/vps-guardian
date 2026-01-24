@@ -145,22 +145,22 @@ logs:
 # WARNING: This is for LOCAL TESTING ONLY - do NOT run on production VPS
 # as creating suspicious processes may trigger abuse detection by your provider
 test-detection:
-	@echo "============================================"
-	@echo "⚠️  WARNING: LOCAL TESTING ONLY"
-	@echo "============================================"
-	@echo "This creates a fake miner process to test Guardian."
-	@echo "Do NOT run this on production VPS - it may trigger"
-	@echo "abuse detection by your hosting provider."
-	@echo ""
-	@read -p "Continue? (y/N) " confirm; \
+	@echo "============================================" && \
+	echo "⚠️  WARNING: LOCAL TESTING ONLY" && \
+	echo "============================================" && \
+	echo "This creates a fake miner process to test Guardian." && \
+	echo "Do NOT run this on production VPS - it may trigger" && \
+	echo "abuse detection by your hosting provider." && \
+	echo "" && \
+	read -p "Continue? (y/N) " confirm && \
 	if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
 		echo "Aborted."; \
 		exit 0; \
-	fi
-	@echo ""
-	@echo "Creating fake miner process for 15 seconds..."
-	@bash -c 'exec -a "xmrig-test-fake" sleep 15' &
-	@PID=$$!; \
+	fi && \
+	echo "" && \
+	echo "Creating fake miner process for 15 seconds..." && \
+	bash -c 'exec -a "xmrig-test-fake" sleep 15' & \
+	PID=$$!; \
 	echo "Fake miner PID: $$PID"; \
 	echo "Watching for Guardian response..."; \
 	sleep 12; \

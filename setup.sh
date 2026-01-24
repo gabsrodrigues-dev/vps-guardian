@@ -115,6 +115,16 @@ chmod +x "$INSTALL_DIR/firewall/rules.sh"
 chmod +x "$INSTALL_DIR/firewall/blocklists/update-blocklist.sh"
 chmod +x "$INSTALL_DIR/audit/audit.sh" 2>/dev/null || true
 
+# Create config.yaml from example if it doesn't exist
+if [ ! -f "$INSTALL_DIR/guardian/config.yaml" ]; then
+    if [ -f "$INSTALL_DIR/config.yaml.example" ]; then
+        cp "$INSTALL_DIR/config.yaml.example" "$INSTALL_DIR/guardian/config.yaml"
+        log "Created config.yaml from example"
+    fi
+else
+    log "Existing config.yaml preserved (not overwritten)"
+fi
+
 # Step 3: Create required directories
 log "[3/8] Creating runtime directories..."
 mkdir -p /var/quarantine

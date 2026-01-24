@@ -1,7 +1,7 @@
 # VPS Guardian - Makefile
 # Commands for installation, validation, and management
 
-.PHONY: help install validate status logs test-detection uninstall lint test test-cov test-verbose config cron cron-status cron-remove
+.PHONY: help install update validate status logs test-detection uninstall lint test test-cov test-verbose config cron cron-status cron-remove
 
 # Default target
 help:
@@ -9,6 +9,7 @@ help:
 	@echo "=================================="
 	@echo ""
 	@echo "  make install        - Run full installation (requires sudo)"
+	@echo "  make update         - Update Guardian after git pull (preserves config)"
 	@echo "  make config         - Create config.yaml from example"
 	@echo "  make validate       - Validate installation (passive checks only)"
 	@echo "  make status         - Show Guardian service status"
@@ -37,6 +38,66 @@ install:
 		exit 1; \
 	fi
 	@./setup.sh
+
+# Update Guardian after git pull (preserves config)
+update:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Run with sudo: sudo make update"; \
+		exit 1; \
+	fi
+	@echo "============================================"
+	@echo "VPS Guardian - Update"
+	@echo "============================================"
+	@echo ""
+	@echo "[1/5] Stopping Guardian service..."
+	@systemctl stop guardian 2>/dev/null || true
+	@echo "  ✅ Service stopped"
+	@echo ""
+	@echo "[2/5] Backing up current config..."
+	@if [ -f "/opt/vps-guardian/guardian/config.yaml" ]; then \
+		cp /opt/vps-guardian/guardian/config.yaml /tmp/guardian-config-backup.yaml; \
+		echo "  ✅ Config backed up to /tmp/guardian-config-backup.yaml"; \
+	fi
+	@echo ""
+	@echo "[3/5] Copying new files..."
+	@cp -r guardian /opt/vps-guardian/
+	@cp -r firewall /opt/vps-guardian/
+	@cp -r tests /opt/vps-guardian/ 2>/dev/null || true
+	@cp -r docs /opt/vps-guardian/ 2>/dev/null || true
+	@cp Makefile /opt/vps-guardian/
+	@cp setup.sh /opt/vps-guardian/
+	@cp config.yaml.example /opt/vps-guardian/
+	@echo "  ✅ Files copied"
+	@echo ""
+	@echo "[4/5] Restoring config..."
+	@if [ -f "/tmp/guardian-config-backup.yaml" ]; then \
+		cp /tmp/guardian-config-backup.yaml /opt/vps-guardian/guardian/config.yaml; \
+		echo "  ✅ Config restored"; \
+		echo ""; \
+		echo "  ⚠️  IMPORTANT: Review new options in config.yaml.example"; \
+		echo "     You may want to add new settings to your config.yaml"; \
+	fi
+	@echo ""
+	@echo "[5/5] Restarting Guardian service..."
+	@chmod +x /opt/vps-guardian/firewall/blocklists/update-blocklist.sh
+	@chmod +x /opt/vps-guardian/audit/audit.sh 2>/dev/null || true
+	@mkdir -p /var/lib/guardian/forensics
+	@chmod 700 /var/lib/guardian/forensics
+	@systemctl start guardian
+	@echo "  ✅ Service started"
+	@echo ""
+	@echo "============================================"
+	@echo "✅ Update complete!"
+	@echo "============================================"
+	@echo ""
+	@echo "Check status: systemctl status guardian"
+	@echo "View logs:    journalctl -u guardian -f"
+	@echo ""
+	@echo "New config options to consider:"
+	@echo "  - forensics.enabled: true"
+	@echo "  - containers.resource_monitoring.enabled: true"
+	@echo "  - persistence.enabled: true"
+	@echo "  - response.telegram.interactive.enabled: true"
 
 # Create config.yaml from example
 # Usage: make config

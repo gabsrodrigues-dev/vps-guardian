@@ -1,7 +1,7 @@
 # VPS Guardian - Makefile
 # Commands for installation, validation, and management
 
-.PHONY: help install validate status logs test-detection uninstall lint test test-cov test-verbose
+.PHONY: help install validate status logs test-detection uninstall lint test test-cov test-verbose config
 
 # Default target
 help:
@@ -9,11 +9,15 @@ help:
 	@echo "=================================="
 	@echo ""
 	@echo "  make install        - Run full installation (requires sudo)"
+	@echo "  make config         - Create config.yaml from example"
 	@echo "  make validate       - Validate installation (passive checks only)"
 	@echo "  make status         - Show Guardian service status"
 	@echo "  make logs           - Tail Guardian logs in real-time"
 	@echo "  make uninstall      - Remove VPS Guardian completely"
 	@echo "  make lint           - Check Python code syntax"
+	@echo ""
+	@echo "Configuration with Telegram:"
+	@echo "  make config TELEGRAM_TOKEN=<token> TELEGRAM_CHAT_ID=<chat_id>"
 	@echo ""
 	@echo "Testing (LOCAL development only):"
 	@echo "  make test           - Run unit tests"
@@ -28,6 +32,34 @@ install:
 		exit 1; \
 	fi
 	@./setup.sh
+
+# Create config.yaml from example
+# Usage: make config
+# Usage: make config TELEGRAM_TOKEN=<token> TELEGRAM_CHAT_ID=<chat_id>
+config:
+	@echo "============================================"
+	@echo "VPS Guardian - Configuration Setup"
+	@echo "============================================"
+	@if [ ! -f "config.yaml.example" ]; then \
+		echo "❌ config.yaml.example not found!"; \
+		exit 1; \
+	fi
+	@cp config.yaml.example guardian/config.yaml
+	@echo "✅ Created guardian/config.yaml from example"
+	@if [ -n "$(TELEGRAM_TOKEN)" ] && [ -n "$(TELEGRAM_CHAT_ID)" ]; then \
+		sed -i 's|enabled: false|enabled: true|' guardian/config.yaml; \
+		sed -i 's|<SEU_TOKEN>|$(TELEGRAM_TOKEN)|' guardian/config.yaml; \
+		sed -i 's|<SEU_CHAT_ID>|$(TELEGRAM_CHAT_ID)|' guardian/config.yaml; \
+		echo "✅ Telegram configured:"; \
+		echo "   Token: $(TELEGRAM_TOKEN)"; \
+		echo "   Chat ID: $(TELEGRAM_CHAT_ID)"; \
+	else \
+		echo "ℹ️  Telegram not configured (optional)"; \
+		echo "   To enable: make config TELEGRAM_TOKEN=xxx TELEGRAM_CHAT_ID=yyy"; \
+	fi
+	@echo ""
+	@echo "Config file: guardian/config.yaml"
+	@echo "Edit manually if needed, then run: sudo make install"
 
 # Validate installation
 validate:

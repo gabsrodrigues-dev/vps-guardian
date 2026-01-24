@@ -3,31 +3,35 @@
 
 detection:
   # Termos suspeitos para detecção de mineradores
+  # IMPORTANTE: NÃO adicione nomes de processos do kernel (kworker, ksoftirqd, etc.)
+  # Apenas adicione nomes de MALWARE conhecidos
   suspicious_terms:
+    # Mineradores conhecidos
     - xmrig
+    - xmr-stak
     - monero
-    - moonre
-    - miner
-    - hashvault
     - cpuminer
     - ethminer
     - cryptonight
+    - ccminer
+    - cgminer
+    - bfgminer
+    - minerd
+    # Pools de mineração
     - stratum
     - pool.minexmr
     - supportxmr
     - nanopool
     - f2pool
+    - hashvault
+    - nicehash
+    - minergate
+    # Malware específico (nomes que imitam processos do kernel)
     - kworkerds
-    - kdevtmpfs
-    - bioset
-    - kthrotld
-    - watchdog
-    - ksoftirqd
-    - migration
-    - kworker
-    - rcu_sched
-    - irq
+    - kdevtmpfsi
+    - kinsing
     - perfctl
+    - perfcc
 
   # Intervalo de varredura em segundos
   scan_interval_seconds: 5

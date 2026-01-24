@@ -196,3 +196,81 @@ class TestDetector:
             threats = detector.scan()
 
         assert len(threats) == 0
+
+    def test_not_detect_build_tools_in_tmp(self, mock_config):
+        """Should NOT detect legitimate build tools running from /tmp."""
+        detector = Detector(mock_config)
+
+        # maturin - Rust/Python build tool (used by pip for Rust packages)
+        maturin_info = {
+            'pid': 7001,
+            'name': 'maturin',
+            'exe': '/tmp/pip-build-xyz/maturin',
+            'cmdline': ['maturin', 'build']
+        }
+        assert detector._analyze_process(maturin_info) is None
+
+        # cargo - Rust package manager
+        cargo_info = {
+            'pid': 7002,
+            'name': 'cargo',
+            'exe': '/tmp/cargo-build/cargo',
+            'cmdline': ['cargo', 'build', '--release']
+        }
+        assert detector._analyze_process(cargo_info) is None
+
+        # rustc - Rust compiler
+        rustc_info = {
+            'pid': 7003,
+            'name': 'rustc',
+            'exe': '/tmp/rustc-temp/rustc',
+            'cmdline': ['rustc', 'main.rs']
+        }
+        assert detector._analyze_process(rustc_info) is None
+
+        # pip - Python package installer
+        pip_info = {
+            'pid': 7004,
+            'name': 'pip',
+            'exe': '/tmp/venv/bin/pip',
+            'cmdline': ['pip', 'install', 'package']
+        }
+        assert detector._analyze_process(pip_info) is None
+
+        # npm - Node.js package manager
+        npm_info = {
+            'pid': 7005,
+            'name': 'npm',
+            'exe': '/tmp/node-build/npm',
+            'cmdline': ['npm', 'install']
+        }
+        assert detector._analyze_process(npm_info) is None
+
+    def test_custom_build_whitelist(self, mock_config):
+        """Should respect custom build whitelist from config."""
+        mock_config['detection']['build_whitelist'] = ['custom-compiler', 'my-build-tool']
+        detector = Detector(mock_config)
+
+        custom_info = {
+            'pid': 8001,
+            'name': 'custom-compiler',
+            'exe': '/tmp/build/custom-compiler',
+            'cmdline': ['custom-compiler', 'source.c']
+        }
+
+        assert detector._analyze_process(custom_info) is None
+
+    def test_still_detect_malware_in_tmp(self, mock_config):
+        """Should still detect actual malware in /tmp (not in whitelist)."""
+        detector = Detector(mock_config)
+
+        malware_info = {
+            'pid': 9001,
+            'name': 'cryptominer',
+            'exe': '/tmp/cryptominer',
+            'cmdline': ['cryptominer', '-p', 'pool.evil.com']
+        }
+
+        threat = detector._analyze_process(malware_info)
+        assert threat is not None
+        assert threat.severity == 'high'

@@ -36,6 +36,16 @@ detection:
   # Intervalo de varredura em segundos
   scan_interval_seconds: 5
 
+  # Whitelist de processos de build/desenvolvimento
+  # Estes processos podem executar de /tmp durante compilação sem serem bloqueados
+  # O Guardian já tem uma lista interna (maturin, cargo, rustc, pip, npm, etc.)
+  # Adicione outros se necessário:
+  build_whitelist: []
+  # Exemplo:
+  # build_whitelist:
+  #   - custom-compiler
+  #   - my-build-tool
+
 # Monitoramento de Recursos
 # Premissa: Nenhum processo legítimo consome >75% por mais de 10 minutos
 resources:

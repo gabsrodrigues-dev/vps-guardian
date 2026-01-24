@@ -33,10 +33,33 @@ class Detector:
     # Processes that masquerade as kernel workers
     FAKE_KERNEL_PATTERNS = ['kworkerds', 'kdevtmpfs', 'kthreaddi']
 
+    # Build/development tools that legitimately run from /tmp during compilation
+    BUILD_PROCESS_WHITELIST = [
+        'maturin',      # Rust/Python build tool
+        'cargo',        # Rust package manager
+        'rustc',        # Rust compiler
+        'cc1',          # GCC C compiler
+        'cc1plus',      # GCC C++ compiler
+        'as',           # GNU assembler
+        'ld',           # GNU linker
+        'pip',          # Python package installer
+        'pip3',
+        'npm',          # Node.js package manager
+        'node',         # Node.js runtime
+        'go',           # Go compiler
+        'make',         # Build automation
+        'cmake',        # CMake build system
+        'ninja',        # Ninja build system
+    ]
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.suspicious_terms = config['detection']['suspicious_terms']
         self.my_pid = os.getpid()
+        # Load additional build whitelist from config if present
+        self.build_whitelist = self.BUILD_PROCESS_WHITELIST.copy()
+        if 'build_whitelist' in config.get('detection', {}):
+            self.build_whitelist.extend(config['detection']['build_whitelist'])
 
     def scan(self) -> List[Threat]:
         """Scan all processes for suspicious patterns."""
@@ -90,15 +113,18 @@ class Detector:
                     )
 
         # Check for processes running from suspicious paths
+        # But allow legitimate build tools that often run from /tmp during compilation
         if exe:
-            suspicious_paths = ['/tmp/', '/dev/shm/', '/var/tmp/', '/run/user/']
-            for path in suspicious_paths:
-                if path in exe:
-                    return Threat(
-                        pid=pid, name=name, exe=exe, cmdline=cmdline,
-                        reason=f"Executing from suspicious path: {path}",
-                        severity='high'
-                    )
+            is_build_tool = any(tool.lower() in name.lower() for tool in self.build_whitelist)
+            if not is_build_tool:
+                suspicious_paths = ['/tmp/', '/dev/shm/', '/var/tmp/', '/run/user/']
+                for path in suspicious_paths:
+                    if path in exe:
+                        return Threat(
+                            pid=pid, name=name, exe=exe, cmdline=cmdline,
+                            reason=f"Executing from suspicious path: {path}",
+                            severity='high'
+                        )
 
         # Check for fake kernel process names (only if it's NOT a real kernel thread)
         if not is_kernel_thread:

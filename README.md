@@ -1,5 +1,262 @@
 # VPS Guardian
 
+**Read this in other languages: [English](#english) | [Português](#português)**
+
+---
+
+# English
+
+**Anti-Cryptojacking Protection System for Linux VPS**
+
+Protect your VPS against cryptocurrency miners, rootkits, and intrusions. Clone, run one command, and your VPS is protected.
+
+## The Problem
+
+Linux VPS are frequent targets of cryptojacking attacks:
+- Attackers exploit SSH with weak passwords
+- Malware like **perfctl** uses rootkits to hide
+- Miners consume 100% CPU, causing abuse-related suspensions
+- Communication via TOR makes detection difficult
+
+## The Solution
+
+VPS Guardian implements **defense in depth** with 4 layers:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    LAYER 1: PREVENTION                      │
+│  SSH key-only │ Fail2ban │ /tmp noexec │ Firewall blocklist │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    LAYER 2: DETECTION                       │
+│  Suspicious terms │ High CPU/RAM │ Pool connections │ Hash  │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    LAYER 3: RESPONSE                        │
+│     Kill process │ Quarantine binary │ Log │ Telegram       │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    LAYER 4: AUDIT                           │
+│         chkrootkit │ rkhunter │ Weekly verification         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Quick Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/rfschubert/vps-guardian.git
+cd vps-guardian
+
+# Install
+sudo make install
+
+# Validate the installation
+make validate
+
+# Monitor in real-time
+make logs
+```
+
+**Done!** Your VPS is now protected.
+
+## Available Commands
+
+```bash
+make help           # List all commands
+sudo make install   # Install VPS Guardian
+make validate       # Validate installation is correct (10 checks)
+make status         # Show Guardian service status
+make logs           # Display logs in real-time
+make test-detection # Test detection (creates fake process)
+make test           # Run test suite (67 tests)
+sudo make uninstall # Remove completely
+```
+
+## What Gets Installed
+
+| Component | Description |
+|-----------|-------------|
+| **Guardian Service** | Python daemon that monitors processes 24/7 |
+| **SSH Hardening** | Disables password login, limits attempts |
+| **Fail2ban** | Blocks IPs after 3 failed attempts |
+| **Firewall Rules** | Blocks mining ports and TOR exit nodes |
+| **Integrity Checker** | Detects modified binaries (rootkits) |
+| **Blocklists** | Daily updates of mining pool IPs |
+
+## How It Works
+
+### Miner Detection
+
+1. **By Name**: Detects processes with terms like `xmrig`, `monero`, `miner`
+2. **By Behavior**: Processes using >75% CPU for more than 10 minutes
+3. **By Network**: Connections to known mining pools
+4. **By Location**: Executables in `/tmp`, `/dev/shm`
+
+### Automatic Response
+
+| Situation | Action |
+|-----------|--------|
+| Suspicious term detected | Immediate kill |
+| Connection to mining pool | Immediate kill |
+| CPU >75% for 10 minutes | Telegram notification |
+| CPU >75% for 20 minutes | Automatic kill |
+| Modified system binary | Critical alert |
+
+## Configuration
+
+Edit `/opt/vps-guardian/guardian/config.yaml`:
+
+```yaml
+# Resource thresholds
+resources:
+  cpu_threshold_percent: 75
+  memory_threshold_percent: 75
+  notify_after_minutes: 10    # Notify
+  kill_after_minutes: 20      # Kill
+
+# Telegram notifications (optional)
+response:
+  telegram:
+    enabled: true
+    webhook_url: "https://api.telegram.org/bot<TOKEN>/sendMessage"
+    chat_id: "123456789"
+
+# Ignored processes (whitelist)
+resources:
+  whitelist:
+    - dockerd
+    - containerd
+    - systemd
+    - sshd
+    - guardian.py
+```
+
+### Configure Telegram
+
+1. Create a bot with [@BotFather](https://t.me/botfather)
+2. Get the bot token
+3. Find your chat_id with [@userinfobot](https://t.me/userinfobot)
+4. Update `config.yaml`
+
+## Useful Commands
+
+```bash
+# Service status
+systemctl status guardian
+
+# Real-time logs
+journalctl -fu guardian
+
+# Stop temporarily
+systemctl stop guardian
+
+# Restart after config change
+systemctl restart guardian
+
+# Check firewall rules
+/opt/vps-guardian/firewall/rules.sh status
+
+# Run manual audit
+sudo /opt/vps-guardian/audit/audit.sh
+
+# Update blocklists manually
+sudo /opt/vps-guardian/firewall/blocklists/update-blocklist.sh
+```
+
+## Logs and Monitoring
+
+| Log | Location |
+|-----|----------|
+| Guardian Service | `journalctl -u guardian` |
+| Incidents (JSON) | `/var/log/guardian.log` |
+| Blocklist updates | `/var/log/guardian-blocklist.log` |
+| Audits | `/var/log/guardian-audit-*.log` |
+| Quarantined files | `/var/quarantine/` |
+
+## Uninstallation
+
+```bash
+sudo /opt/vps-guardian/uninstall.sh
+```
+
+## Requirements
+
+- **OS**: Ubuntu 20.04+, Debian 10+, RHEL 8+, CentOS 8+
+- **Python**: 3.8+
+- **Privileges**: Root (required for process killing and firewall)
+- **Dependencies**: Automatically installed by setup.sh
+
+## FAQ
+
+### My legitimate process was killed!
+
+Add it to the whitelist in `config.yaml`:
+
+```yaml
+resources:
+  whitelist:
+    - my-process
+```
+
+### How do I test if it's working?
+
+```bash
+# Simulate a suspicious process (create test script)
+cat > /tmp/test_miner.sh << 'EOF'
+#!/bin/bash
+# Rename process to suspicious term
+exec -a xmrig sleep 300
+EOF
+chmod +x /tmp/test_miner.sh
+/tmp/test_miner.sh &
+
+# Check logs to confirm detection
+journalctl -fu guardian
+```
+
+### SSH stopped working!
+
+The setup.sh disables password login. Make sure you have SSH keys configured:
+
+```bash
+# On your local computer
+ssh-copy-id user@your-vps
+```
+
+### Can I use it with Docker?
+
+Yes, but Guardian must run on the host, not inside containers. It monitors all system processes.
+
+## Contributing
+
+1. Fork the repository
+2. Create your branch (`git checkout -b feature/my-feature`)
+3. Commit your changes (`git commit -m 'Add my feature'`)
+4. Push to the branch (`git push origin feature/my-feature`)
+5. Open a Pull Request
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [CoinBlockerLists](https://zerodot1.gitlab.io/CoinBlockerLists/) - Mining pool blocklist
+- [TorProject](https://check.torproject.org/exit-addresses) - Exit node list
+- [psutil](https://github.com/giampaolo/psutil) - Process monitoring
+
+---
+
+**Developed to protect VPS from cryptojacking attacks.**
+
+---
+
+# Português
+
 **Sistema de Proteção Anti-Cryptojacking para VPS Linux**
 
 Proteja sua VPS contra mineradores de criptomoedas, rootkits e invasões. Clone, execute um comando e sua VPS está protegida.

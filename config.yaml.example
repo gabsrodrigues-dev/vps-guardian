@@ -120,6 +120,56 @@ response:
     #   - 123456789
     #   - 987654321
 
+  # Notificações via Webhook (opcional)
+  # Envia notificações para qualquer endpoint HTTP via POST
+  # Compatível com Slack, Discord, SIEM, dashboards customizados, etc.
+  webhook:
+    enabled: false
+    url: "https://your-endpoint.example.com/guardian/webhook"
+
+    # Token de autenticação (será enviado no header Authorization: Bearer <token>)
+    # Se não configurado, um token será gerado automaticamente e exibido nos logs
+    auth_token: null
+    # Exemplo:
+    # auth_token: "seu-token-secreto-aqui"
+
+    # Timeout para requisições (segundos)
+    timeout_seconds: 10
+
+    # Número de tentativas em caso de falha
+    retry_count: 2
+
+    # ┌──────────────────────────────────────────────────────────┐
+    # │           INSTRUÇÕES DE INTEGRAÇÃO                       │
+    # ├──────────────────────────────────────────────────────────┤
+    # │ Seu endpoint deve aceitar requisições POST com:          │
+    # │                                                          │
+    # │ HEADER:                                                  │
+    # │   Content-Type: application/json                         │
+    # │   Authorization: Bearer <auth_token>                     │
+    # │                                                          │
+    # │ BODY (JSON):                                             │
+    # │ {                                                        │
+    # │   "event": "threat_detected",                            │
+    # │   "timestamp": "2026-01-24T12:00:00",                    │
+    # │   "hostname": "my-vps",                                  │
+    # │   "severity": "critical | warning | info",               │
+    # │   "process": {"pid": 1234, "name": "xmrig"},            │
+    # │   "reason": "Suspicious process: mining detected",       │
+    # │   "action_taken": "killed+quarantined",                  │
+    # │   "details": {"cpu_percent": 95.5},                      │
+    # │   "forensics_path": "/var/lib/guardian/forensics/..."    │
+    # │ }                                                        │
+    # │                                                          │
+    # │ EVENTOS POSSÍVEIS:                                       │
+    # │   - threat_detected: Ameaça detectada (kill ou notify)   │
+    # │   - container_warning: Container com CPU alta             │
+    # │   - process_warning: Processo suspeito detectado          │
+    # │   - test: Teste de conectividade                          │
+    # │                                                          │
+    # │ Retorne status 2xx para confirmar recebimento.           │
+    # └──────────────────────────────────────────────────────────┘
+
 # Verificação de Integridade
 integrity:
   # Binários críticos para verificação de hash

@@ -11,6 +11,7 @@ from .forensics import ForensicsCollector, ForensicsData
 from .auditd import AuditdMonitor, AuditEvent
 from .container_monitor import ContainerMonitor, ContainerStats, ContainerAbuse
 from .telegram_bot import TelegramBot, TelegramAction
+from .webhook import WebhookNotifier
 
 __all__ = [
     'Detector', 'Threat',
@@ -24,4 +25,5 @@ __all__ = [
     'AuditdMonitor', 'AuditEvent',
     'ContainerMonitor', 'ContainerStats', 'ContainerAbuse',
     'TelegramBot', 'TelegramAction',
+    'WebhookNotifier',
 ]

@@ -36,6 +36,13 @@ def mock_config():
                 'enabled': False,
                 'webhook_url': 'https://api.telegram.org/bot123/sendMessage',
                 'chat_id': '12345'
+            },
+            'webhook': {
+                'enabled': False,
+                'url': 'https://webhook.example.com/guardian',
+                'auth_token': 'test-token-abc123',
+                'timeout_seconds': 10,
+                'retry_count': 2
             }
         },
         'integrity': {

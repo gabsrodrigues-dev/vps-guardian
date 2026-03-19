@@ -4,7 +4,23 @@ Todas as mudanças notáveis do projeto serão documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
-## [1.0.0] - 2024-01-24
+## [1.1.0] - 2026-03-19
+
+### Adicionado
+- **Webhook Notifications**
+  - Notificações via HTTP POST para qualquer endpoint externo
+  - Header `Authorization: Bearer <token>` configurável
+  - Auto-geração de token seguro quando não configurado
+  - Retry automático com contagem configurável
+  - Compatível com Slack, Discord, SIEM, dashboards customizados
+  - Eventos: `threat_detected`, `container_warning`, `process_warning`, `test`
+  - Método `send_test()` para verificar conectividade
+  - Método `get_integration_info()` com schema do body e instruções
+  - Integração com ResponseHandler (notifica junto com Telegram)
+  - Integração com guardian.py para alertas de container
+  - Suite completa de testes (`test_webhook.py`)
+
+## [1.0.0] - 2026-01-24
 
 ### Adicionado
 - **Camada de Prevenção**

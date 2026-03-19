@@ -19,6 +19,7 @@ from enum import Enum
 import logging
 
 from guardian.modules.forensics import ForensicsCollector
+from guardian.modules.webhook import WebhookNotifier
 
 logger = logging.getLogger('guardian.response')
 
@@ -55,6 +56,9 @@ class ResponseHandler:
 
         # Forensics collector
         self.forensics = ForensicsCollector(config)
+
+        # Webhook notifier
+        self.webhook = WebhookNotifier(config)
 
         # Container config
         containers_config = config.get('containers', {})
@@ -215,7 +219,11 @@ class ResponseHandler:
     def _send_notification(self, pid: int, name: str, reason: str,
                            is_kill: bool, details: Dict,
                            forensics_summary: Optional[str] = None):
-        """Send notification via Telegram."""
+        """Send notification via Telegram and Webhook."""
+        self._send_webhook_notification(
+            pid, name, reason, is_kill, details, forensics_summary
+        )
+
         if not self.telegram_enabled or not self.telegram_webhook:
             return
 
@@ -265,6 +273,25 @@ class ResponseHandler:
 
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")
+
+    def _send_webhook_notification(self, pid: int, name: str, reason: str,
+                                   is_kill: bool, details: Dict,
+                                   forensics_summary: Optional[str] = None):
+        """Send notification via Webhook."""
+        if not self.webhook.enabled:
+            return
+
+        try:
+            self.webhook.send_incident(
+                pid=pid,
+                name=name,
+                reason=reason,
+                is_kill=is_kill,
+                details=details,
+                forensics_summary=forensics_summary
+            )
+        except Exception as e:
+            logger.error(f"Failed to send webhook notification: {e}")
 
     def _log_incident(self, incident: Incident):
         """Log incident to JSON file."""

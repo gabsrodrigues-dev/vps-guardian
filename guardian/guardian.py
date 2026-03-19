@@ -118,7 +118,8 @@ def main():
             IntegrityChecker, FilesystemMonitor,
             ResponseHandler, ResponseLevel,
             PersistenceScanner, AuditdMonitor,
-            ContainerMonitor, TelegramBot
+            ContainerMonitor, TelegramBot,
+            WebhookNotifier
         )
         logger.info("Detection modules loaded successfully")
     except ImportError as e:
@@ -137,6 +138,7 @@ def main():
         auditd_monitor = AuditdMonitor(config)
         container_monitor = ContainerMonitor(config)
         telegram_bot = TelegramBot(config)
+        webhook_notifier = WebhookNotifier(config)
         logger.info("All modules initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize modules: {e}", exc_info=True)
@@ -382,6 +384,14 @@ def main():
                             f"Container {warn['container_name']} high CPU for {warn['duration_minutes']:.1f}min"
                         )
                         telegram_bot.send_container_warning(
+                            container_name=warn['container_name'],
+                            container_id=warn['container_id'],
+                            cpu_percent=warn['cpu_percent'],
+                            duration_minutes=warn['duration_minutes'],
+                            image=warn['image'],
+                            labels=warn['labels']
+                        )
+                        webhook_notifier.send_container_warning(
                             container_name=warn['container_name'],
                             container_id=warn['container_id'],
                             cpu_percent=warn['cpu_percent'],

@@ -222,15 +222,7 @@ class IntegrityChecker:
     def _check_hidden_processes(self) -> Optional[RootkitIndicator]:
         """Check for processes hidden by rootkits."""
         try:
-            # Get PIDs from /proc
-            proc_pids = set()
-            for entry in os.listdir('/proc'):
-                if entry.isdigit():
-                    proc_path = Path('/proc') / entry
-                    if proc_path.is_dir():
-                        proc_pids.add(int(entry))
-
-            # Get PIDs from ps
+            # Get PIDs from ps first (more stable)
             result = subprocess.run(
                 ['ps', 'aux'],
                 capture_output=True,
@@ -249,20 +241,33 @@ class IntegrityChecker:
                     except ValueError:
                         continue
 
+            # Get PIDs from /proc
+            proc_pids = set()
+            for entry in os.listdir('/proc'):
+                if entry.isdigit():
+                    proc_path = Path('/proc') / entry
+                    if proc_path.is_dir():
+                        proc_pids.add(int(entry))
+
             # Find PIDs in /proc but not in ps
             hidden_pids = proc_pids - ps_pids
 
-            # Filter out small PIDs and self
+            # Filter out false positives:
+            # - PIDs <= 10 (kernel threads)
+            # - Very short-lived processes (race condition)
+            # Only alert if we have a significant number of hidden processes
             hidden_pids = [pid for pid in hidden_pids if pid > 10]
 
-            if not hidden_pids:
+            # Require at least 5 hidden processes to reduce false positives
+            # A real rootkit will hide multiple processes
+            if len(hidden_pids) < 5:
                 return None
 
             return RootkitIndicator(
                 check_name='hidden_processes',
                 severity='critical',
                 description='Process hiding detected (possible rootkit)',
-                evidence={'hidden_pids': hidden_pids}
+                evidence={'hidden_pids': hidden_pids, 'count': len(hidden_pids)}
             )
 
         except (IOError, OSError, subprocess.TimeoutExpired):

@@ -258,6 +258,24 @@ resources:
     - my-process
 ```
 
+### I'm getting false "Process hiding detected" alerts!
+
+This check compares processes in `/proc` vs `ps aux` output. Due to race conditions (processes starting/stopping between checks), you might see false positives. The check now requires at least 5 hidden processes to trigger an alert, reducing false positives.
+
+If you still get false alerts, you can disable this specific check:
+
+```yaml
+integrity:
+  rootkit_detection:
+    check_hidden_processes: false
+```
+
+Then restart Guardian:
+
+```bash
+sudo systemctl restart guardian
+```
+
 ### How do I test if it's working?
 
 ```bash
@@ -563,6 +581,24 @@ Adicione-o à whitelist em `config.yaml`:
 resources:
   whitelist:
     - meu-processo
+```
+
+### Estou recebendo alertas falsos de "Process hiding detected"!
+
+Esta verificação compara processos em `/proc` vs saída do `ps aux`. Devido a race conditions (processos iniciando/parando entre as verificações), você pode ver falsos positivos. A verificação agora requer pelo menos 5 processos escondidos para disparar um alerta, reduzindo falsos positivos.
+
+Se ainda receber alertas falsos, você pode desabilitar esta verificação específica:
+
+```yaml
+integrity:
+  rootkit_detection:
+    check_hidden_processes: false
+```
+
+Depois reinicie o Guardian:
+
+```bash
+sudo systemctl restart guardian
 ```
 
 ### Como testar se está funcionando?

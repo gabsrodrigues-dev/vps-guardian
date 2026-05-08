@@ -34,6 +34,7 @@ resources:
   whitelist:
     - dockerd
     - containerd
+    - docker-proxy
     - systemd
     - sshd
     - guardian.py
@@ -51,6 +52,9 @@ network:
     - 14433
     - 14444
     - 45700
+
+  process_whitelist:
+    - docker-proxy
 
 response:
   quarantine_dir: /var/quarantine

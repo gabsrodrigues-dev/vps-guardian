@@ -39,6 +39,10 @@ class NetworkMonitor:
         self.tor_nodes_file = Path(config['network']['tor_nodes_list'])
         self.suspicious_ports = set(config['network']['suspicious_ports'])
 
+        self.process_whitelist = set(config.get('resources', {}).get('whitelist', []))
+        network_whitelist = config.get('network', {}).get('process_whitelist', [])
+        self.process_whitelist.update(network_whitelist)
+
         # Load blocklists
         self.blocked_domains: Set[str] = set()
         self.blocked_ips: Set[str] = set()
@@ -113,6 +117,9 @@ class NetworkMonitor:
 
     def _analyze_connection(self, pid: int, name: str, ip: str, port: int) -> Optional[NetworkThreat]:
         """Analyze a single connection for threats."""
+
+        if name in self.process_whitelist:
+            return None
 
         # Check if connecting to mining port
         if port in self.suspicious_ports:

@@ -292,10 +292,10 @@ class TestRootkitDetection:
 
     def test_hidden_processes_detection(self, rootkit_config, tmp_path, monkeypatch):
         """Should detect processes hidden by rootkits."""
-        # Mock /proc listing
-        proc_pids = ['1', '2', '100', '200', '666']  # 666 is hidden
+        # Mock /proc listing - need at least 5 hidden PIDs to trigger alert
+        proc_pids = ['1', '2', '100', '200', '666', '777', '888', '999', '1001']  # 666-1001 are hidden
 
-        # Mock ps output (missing PID 666)
+        # Mock ps output (missing PIDs 666, 777, 888, 999, 1001)
         ps_output = """USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
 root         1  0.0  0.1 169564 11424 ?        Ss   10:00   0:01 /sbin/init
 root         2  0.0  0.0      0     0 ?        S    10:00   0:00 [kthreadd]
@@ -334,6 +334,7 @@ root       200  0.0  0.1  98765   512 ?        S    10:02   0:00 /usr/sbin/cron
         assert len(hidden_indicators) == 1
         assert hidden_indicators[0].severity == 'critical'
         assert 666 in hidden_indicators[0].evidence.get('hidden_pids', [])
+        assert hidden_indicators[0].evidence.get('count', 0) >= 5
 
     def test_kernel_modules_detection(self, rootkit_config, tmp_path):
         """Should detect known rootkit kernel modules."""

@@ -37,6 +37,8 @@ logger = logging.getLogger('guardian')
 GUARDIAN_DIR = Path(__file__).parent
 CONFIG_PATH = GUARDIAN_DIR / 'config.yaml'
 
+_reported_zombies: set = set()
+
 def load_config():
     """Load configuration from YAML file."""
     try:
@@ -66,26 +68,30 @@ def clean_zombies():
             try:
                 if proc.info['status'] == psutil.STATUS_ZOMBIE:
                     zombie_pid = proc.info['pid']
+
+                    if zombie_pid in _reported_zombies:
+                        continue
+
                     ppid = proc.info['ppid']
 
                     # Try to reap the zombie with waitpid (non-blocking)
                     try:
                         os.waitpid(zombie_pid, os.WNOHANG)
                         logger.debug(f"Reaped zombie PID {zombie_pid}")
+                        continue
                     except ChildProcessError:
                         # Not our child - can't reap it directly
-                        # This is normal - the zombie's parent must reap it
                         pass
                     except OSError:
                         pass
 
-                    # If zombie still exists after waitpid attempt, just log it
-                    # Don't kill parent as it may cause more issues
+                    # If zombie still exists after waitpid attempt, log once
                     if psutil.pid_exists(zombie_pid):
                         try:
                             z = psutil.Process(zombie_pid)
                             if z.status() == psutil.STATUS_ZOMBIE:
-                                logger.warning(
+                                _reported_zombies.add(zombie_pid)
+                                logger.debug(
                                     f"Zombie process detected: PID {zombie_pid} "
                                     f"(parent: {ppid}, name: {proc.info['name']}). "
                                     f"Parent should reap it."
@@ -95,6 +101,10 @@ def clean_zombies():
 
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+
+        _reported_zombies.difference_update(
+            pid for pid in list(_reported_zombies) if not psutil.pid_exists(pid)
+        )
 
     except ImportError:
         logger.warning("psutil not installed. Zombie cleanup disabled.")
@@ -116,7 +126,7 @@ def main():
         from guardian.modules import (
             Detector, ResourceMonitor, NetworkMonitor,
             IntegrityChecker, FilesystemMonitor,
-            ResponseHandler, ResponseLevel,
+            ResponseHandler, ResponseLevel, Incident,
             PersistenceScanner, AuditdMonitor,
             ContainerMonitor, TelegramBot,
             WebhookNotifier
@@ -209,7 +219,7 @@ def main():
                     logger.critical(f"INTEGRITY VIOLATION: {violation.path} - Expected: {violation.expected_hash[:16]}... Got: {violation.actual_hash[:16] if violation.actual_hash != 'FILE_MISSING' else 'MISSING'}")
                     # For integrity violations, we can't kill a specific PID
                     # Just log as critical incident
-                    response_handler._log_incident(response_handler.Incident(
+                    response_handler._log_incident(Incident(
                         timestamp=time.strftime('%Y-%m-%d %H:%M:%S'),
                         pid=0,
                         process_name='N/A',

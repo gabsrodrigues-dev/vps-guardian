@@ -12,6 +12,7 @@ from .auditd import AuditdMonitor, AuditEvent
 from .container_monitor import ContainerMonitor, ContainerStats, ContainerAbuse
 from .telegram_bot import TelegramBot, TelegramAction
 from .webhook import WebhookNotifier
+from .portscan_detector import PortScanDetector, PortScanEvent
 
 __all__ = [
     'Detector', 'Threat',
@@ -26,4 +27,5 @@ __all__ = [
     'ContainerMonitor', 'ContainerStats', 'ContainerAbuse',
     'TelegramBot', 'TelegramAction',
     'WebhookNotifier',
+    'PortScanDetector', 'PortScanEvent',
 ]

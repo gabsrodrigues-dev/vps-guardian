@@ -129,7 +129,7 @@ def main():
             ResponseHandler, ResponseLevel, Incident,
             PersistenceScanner, AuditdMonitor,
             ContainerMonitor, TelegramBot,
-            WebhookNotifier
+            WebhookNotifier, PortScanDetector
         )
         logger.info("Detection modules loaded successfully")
     except ImportError as e:
@@ -149,6 +149,7 @@ def main():
         container_monitor = ContainerMonitor(config)
         telegram_bot = TelegramBot(config)
         webhook_notifier = WebhookNotifier(config)
+        portscan_detector = PortScanDetector(config)
         logger.info("All modules initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize modules: {e}", exc_info=True)
@@ -440,6 +441,38 @@ def main():
                     last_container_check = current_time
                 except Exception as e:
                     logger.error(f"Container monitoring error: {e}", exc_info=True)
+
+            # PRIORITY 9: Port scan detection (every scan cycle)
+            if portscan_detector.enabled:
+                try:
+                    scan_events = portscan_detector.check()
+                    for event in scan_events:
+                        logger.warning(
+                            f"PORT SCAN from {event.source_ip}: "
+                            f"{event.port_count} ports in {event.duration_seconds:.0f}s "
+                            f"(type: {event.scan_type}) → {event.action_taken}"
+                        )
+                        response_handler.handle_threat(
+                            pid=0,
+                            name=f"portscan:{event.source_ip}",
+                            reason=(
+                                f"Port scan detected from {event.source_ip}: "
+                                f"{event.port_count} ports probed in {event.duration_seconds:.0f}s "
+                                f"({event.scan_type}) - Action: {event.action_taken}"
+                            ),
+                            level=ResponseLevel.NOTIFY,
+                            exe_path=None,
+                            extra_details={
+                                'source_ip': event.source_ip,
+                                'port_count': event.port_count,
+                                'ports_sample': event.ports_hit[:20],
+                                'duration_seconds': event.duration_seconds,
+                                'scan_type': event.scan_type,
+                                'action_taken': event.action_taken,
+                            }
+                        )
+                except Exception as e:
+                    logger.error(f"Port scan detection error: {e}", exc_info=True)
 
             # Forensics cleanup (every hour)
             if current_time - last_forensics_cleanup >= 3600:

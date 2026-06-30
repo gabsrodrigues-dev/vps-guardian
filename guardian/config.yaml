@@ -161,3 +161,26 @@ auditd:
   enabled: false
   install_rules: true
   log_path: /var/log/audit/audit.log
+
+# Port scan detection
+portscan_detection:
+  enabled: true
+  port_threshold: 15
+  time_window_seconds: 60
+  cooldown_seconds: 300
+  log_source: journalctl
+  kernlog_path: /var/log/kern.log
+  install_iptables_rule: true
+
+  ban:
+    enabled: true
+    temp_ban_minutes: 30
+    permanent_on_repeat: true
+    state_file: /var/lib/guardian/portscan_bans.json
+
+  whitelist_ips:
+    - "127.0.0.1"
+  whitelist_cidrs:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"

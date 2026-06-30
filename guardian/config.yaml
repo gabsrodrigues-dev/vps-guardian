@@ -21,16 +21,13 @@ detection:
     - hiveos
   scan_interval_seconds: 5
 
-# Monitoramento de Recursos - LÓGICA SIMPLIFICADA
-# Premissa: Nenhum processo legítimo consome >75% por mais de 10 minutos
 resources:
   cpu_threshold_percent: 75
   memory_threshold_percent: 75
-  notify_after_minutes: 10         # Notificar via Telegram após 10 minutos
-  kill_after_minutes: 20           # MATAR após 20 minutos (sem exceção)
-  vps_abuse_limit_minutes: 90      # Limite da VPS antes de bloqueio por abuso
+  notify_after_minutes: 10        
+  kill_after_minutes: 20
+  vps_abuse_limit_minutes: 90 
 
-  # Whitelist mínima - APENAS processos essenciais do sistema
   whitelist:
     - dockerd
     - containerd
@@ -96,7 +93,6 @@ filesystem:
     - /var/tmp
   max_file_age_minutes: 5
 
-# Forensics configuration
 forensics:
   enabled: true
   storage_dir: /var/lib/guardian/forensics
@@ -105,7 +101,6 @@ forensics:
   include_open_files: true
   retention_days: 30
 
-# Persistence detection
 persistence:
   enabled: true
   scan_interval_seconds: 60
@@ -128,13 +123,11 @@ persistence:
     known_keys_db: /var/lib/guardian/known_ssh_keys.json
     alert_on_new: true
 
-# Container awareness
 containers:
   enabled: true
   on_threat: stop
   whitelist: []
 
-  # Container resource monitoring
   resource_monitoring:
     enabled: true
     cpu_threshold_percent: 80
@@ -142,7 +135,6 @@ containers:
     check_interval_seconds: 60
     action: stop  # stop or kill
 
-    # Container name/image patterns to ignore (regex)
     whitelist:
       - "coolify.*"
       - "traefik.*"
@@ -151,18 +143,15 @@ containers:
       - ".*mysql.*"
       - ".*mariadb.*"
 
-    # Label-based whitelist
     whitelist_labels:
       - "coolify.managed=true"
       - "guardian.ignore=true"
 
-# Auditd integration
 auditd:
   enabled: false
   install_rules: true
   log_path: /var/log/audit/audit.log
 
-# Port scan detection
 portscan_detection:
   enabled: true
   port_threshold: 15

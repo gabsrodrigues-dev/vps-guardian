@@ -47,7 +47,12 @@ class ContainerMonitor:
         resource_config = container_config.get('resource_monitoring', {})
 
         self.enabled = resource_config.get('enabled', True)
-        self.cpu_threshold = resource_config.get('cpu_threshold_percent', 100)
+
+        import multiprocessing
+        self.num_cpus = multiprocessing.cpu_count()
+        configured_threshold = resource_config.get('cpu_threshold_percent', 80)
+        self.cpu_threshold = (configured_threshold / 100.0) * self.num_cpus * 100
+
         self.warn_after_minutes = resource_config.get('warn_after_minutes', 5)
         self.kill_after_minutes = resource_config.get('kill_after_minutes', 15)
         self.check_interval = resource_config.get('check_interval_seconds', 60)
@@ -208,7 +213,9 @@ class ContainerMonitor:
                     tracking.first_high_cpu_time = current_time
                     self.logger.info(
                         f"Container {container_name} ({container_id[:12]}) "
-                        f"started high CPU usage: {cpu_percent:.1f}%"
+                        f"started high CPU usage: {cpu_percent:.1f}% "
+                        f"(threshold: {self.cpu_threshold:.0f}% = "
+                        f"{self.cpu_threshold_configured}% of {self.num_cpus} CPUs)"
                     )
 
                 tracking.consecutive_high_readings += 1
@@ -295,7 +302,9 @@ class ContainerMonitor:
         """Get current monitoring status for debugging."""
         return {
             'enabled': self.enabled,
-            'threshold': self.cpu_threshold,
+            'num_cpus': self.num_cpus,
+            'configured_threshold_percent': self.cpu_threshold_configured,
+            'effective_threshold_docker_percent': self.cpu_threshold,
             'warn_after_minutes': self.warn_after_minutes,
             'kill_after_minutes': self.kill_after_minutes,
             'tracking': {
